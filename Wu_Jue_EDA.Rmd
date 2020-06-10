@@ -1,0 +1,501 @@
+---
+title: "Wu_Jue_EDA"
+author: "Jue Wu"
+date: "5/6/2020"
+output: 
+  html_document:
+    highlight: tango
+    toc: yes
+    toc_float: yes
+    code_folding: hide
+---
+
+```{r global_options, include = FALSE}
+library(knitr)
+opts_chunk$set(warning = FALSE, message = FALSE, comment = FALSE, dpi = 300)
+```
+
+## Overview
+This is my EDA report of the final project on students' intended college major. I am interested in predicting whether a student's intended college major is a STEM major or not.
+
+## Data Source
+The data set I used is from the High School Longitudinal Study of 2009 (HSLS:09). HSLS:09 surveyed 23000+ 9th graders (and their parents, math and science teachers, school administrators, school counselors) in 2009 and followed them throughout secondary and postsecondary years with a first follow-up in 2012 and a second follow-up in 2016. Public-use data for this project is available for download at https://nces.ed.gov/onlinecodebook.
+
+Citation: National Center for Education Statistics, U.S. Department of Education (2016): High School Longitudinal Study of 2009 (HSLS:09). https://nces.ed.gov/surveys/hsls09/.
+
+## Load Packages
+```{r}
+library(tidyverse)
+library(janitor)
+library(skimr)
+library(rsample)
+library(corrplot)
+```
+
+## Set Seed
+
+## Data Cleaning and Processing
+Because the original dataset is very large, I first selected variables I'm interested and saved it into a "small" data file. Here I included my code for subsetting data without running it.
+```{r, eval = FALSE}
+# Load data
+load("data/unprocessed/hsls_16_student_v1_0.rdata")
+
+# Select variables needed
+hsls <- hsls_16_student_v1_0 %>% 
+  select(X1RACE,
+         X2PAREDU,
+         X3TGPAENG,
+         X3TGPAMAT,
+         X3TGPASCI,
+         X3TGPASOCST,
+         X3TGPAENGIN,
+         X3TCREDSTEM,
+         X3TGPASTEM,
+         X3TGPATOT,
+         X3TGPAMTHAP,
+         X3TGPASCIAP,
+         X4ENTMJST,
+         C2INFSTEM,
+         P1HIMAJ1_STEM,
+         P1HIMAJ2_STEM)
+
+# Save small file
+saveRDS(hsls, file = "data/unprocessed/hsls.rds")
+```
+
+I now start my data cleaning and processing on the "small" data file which only includes variables that I'm interested in.
+
+```{r}
+# Read small file
+hsls <- read_rds("data/unprocessed/hsls.rds")
+
+# Rename variables
+hsls <- hsls %>% 
+  rename(race = X1RACE,
+         paredu = X2PAREDU,
+         gpa_eng = X3TGPAENG,
+         gpa_mat = X3TGPAMAT,
+         gpa_sci = X3TGPASCI,
+         gpa_sosci = X3TGPASOCST,
+         gpa_engin = X3TGPAENGIN,
+         cred_stem = X3TCREDSTEM,
+         gpa_stem = X3TGPASTEM,
+         gpa_total = X3TGPATOT,
+         gpa_mat_ap = X3TGPAMTHAP,
+         gpa_sci_ap = X3TGPASCIAP,
+         stem = X4ENTMJST,
+         info_stem = C2INFSTEM,
+         p1stem = P1HIMAJ1_STEM,
+         p2stem = P1HIMAJ2_STEM)
+
+# Remove missing values for response variable: 
+# only keep No, Yes, Undeclared
+hsls <- hsls %>% 
+  filter(stem == 0 | stem == 1 | stem == -1)
+
+# Remove missing values for students without GPA 
+# note: keeping missing values for engineering and AP because that is an indicator of STEM
+hsls <- hsls %>% 
+  filter(gpa_mat >= 0,
+         gpa_eng >= 0,
+         gpa_sci >= 0,
+         gpa_sosci >= 0,
+         gpa_stem >= 0,
+         gpa_total >= 0)
+
+# Recode some variables as factors
+hsls$race <- as_factor(hsls$race)
+hsls$paredu <- as_factor(hsls$paredu)
+hsls$stem <- as_factor(hsls$stem)
+hsls$info_stem <- as_factor(hsls$info_stem)
+hsls$p1stem <- as_factor(hsls$p1stem)
+hsls$p2stem <- as_factor(hsls$p2stem)
+
+# Collapse categories for p1stem, p2stem, info_stem
+# recode as keep No, Yes, NA
+hsls <- hsls %>% 
+  mutate(p1stem = fct_collapse(p1stem,
+                               "-9" = c("-9", "-8", "-7")),
+         p2stem = fct_collapse(p2stem,
+                               "-9" = c("-9", "-8", "-7")),
+         info_stem = fct_collapse(info_stem,
+                                  "-9" = c("-9", "-8", "-6")))
+
+# Recode gpa_engin, gpa_mat_ap, gpa_sci_ap as categorical because lots of missing
+hsls <- hsls%>% 
+  mutate(gpa_engin = ifelse(gpa_engin >= 0, "Yes", "No"),
+         gpa_mat_ap = ifelse(gpa_mat_ap >= 0, "Yes", "No"),
+         gpa_sci_ap = ifelse(gpa_sci_ap >= 0, "Yes", "No"))
+
+hsls$gpa_engin <- as_factor(hsls$gpa_engin)
+hsls$gpa_mat_ap <- as_factor(hsls$gpa_mat_ap)
+hsls$gpa_sci_ap <- as_factor(hsls$gpa_sci_ap)
+```
+
+Things I did to clean and process include: cleaning up variables' names, removing observations with missing values for my response variable, removing observations with missing values for GPAs with an exception of keeping missing values for Engineering and AP Math and AP Science GPA because that can be an indicator for STEM preparation, recoding some variables as factors, and collapsing categories.
+
+Let's now look at the cleaned data.
+```{r}
+skim_without_charts(hsls)
+```
+
+The processed dataset includes 12131 rows, which means 12131 students' responses. It also includes 16 columns, which means 16 variables, and one of them is my response variable. Among the 16 variables, 9 of them are categorical and 7 of them are numerical. Descriptive statistics are shown in the table above.
+
+We can now save the cleaned data.
+```{r}
+# Save cleaned data to a file
+saveRDS(hsls, file = "data/processed/hsls.rds")
+```
+
+## Split Data
+Now I can read in my processed data and split it into three subsets: 15% for model testing, 85% for modeling. Among the 85% for modeling, 80% is going to be used for model training, and 20% is going to be used for exploratory data analysis.
+```{r}
+# Read in cleaned data
+hsls <- read_rds("data/processed/hsls.rds")
+
+# Split: 15% testing, 85% modeling (80% training, 20% EDA)
+hsls_split_info <- hsls %>% 
+  initial_split(prop = 0.85) 
+
+hsls_split <- tibble(
+  eda = hsls_split_info %>% training() %>% sample_frac(0.2) %>% list(),
+  train = hsls_split_info %>% training() %>% setdiff(eda) %>% list(),
+  test = hsls_split_info %>% testing() %>% list()
+)
+```
+
+## EDA
+Let's first save the data for EDA as a new object and take a look at the data.
+```{r}
+# Select EDA data
+hsls_eda <- hsls_split %>% 
+  pluck("eda", 1) 
+
+# Overview of EDA data
+skim_without_charts(hsls_eda)
+```
+
+2062 observations are included in the EDA dataset, with means and SDs close to the whole sample.
+
+### Correlation Plot
+We can begin our exploration by plotting pairwise correlations between numerical variables.
+```{r}
+# Corrplot
+hsls_eda %>% 
+  select(gpa_eng, gpa_mat, gpa_sci, gpa_sosci, gpa_stem, gpa_total) %>% 
+  cor() %>% 
+  corrplot()
+```
+
+It seems like students' GPAs for different subjects are highly correlated. 
+
+Now let's zoom in and look at some specific variables.
+### Univariate: Intended College Major
+```{r}
+ggplot(hsls_eda, aes(stem)) +
+  geom_bar() +
+  scale_x_discrete(name = "Intended College Major",
+                   labels = c("Undecided", 
+                              "Non-STEM",
+                              "STEM"))
+```
+
+This is a bar chart of my response variable `stem`, which is a categorical variable on whether students' intended college major was a STEM major when they were surveyed during the senior year of high school. We can see that the number of students intending to major in non-STEM is about third times of the number of students intending to major in STEM, which makes sense as we know that the U.S. definitely needs more STEM workers. Also a small portion of students were undecided when they were surveyed during their senior year of high school.
+
+### Major and Math GPA
+```{r}
+# STEM and Math GPA
+ggplot(hsls_eda, aes(stem, gpa_mat)) +
+  geom_boxplot() +
+  scale_x_discrete(name = "Intended College Major",
+                   labels = c("Undecided", 
+                              "Non-STEM",
+                              "STEM"))
+```
+
+This plot shows the relationship between intended college major and math GPA. It seems like on average students who intended to study STEM have a higher math GPA.
+
+### Major and English GPA
+```{r}
+# STEM and English GPA
+ggplot(hsls_eda, aes(stem, gpa_eng)) +
+  geom_boxplot() +
+  scale_x_discrete(name = "Intended College Major",
+                   labels = c("Undecided", 
+                              "Non-STEM",
+                              "STEM"))
+```
+
+This plot shows the relationship between intended college major and English GPA. It seems like on average students who intended to study STEM have a higher English GPA, which is a little surprising to me because I thought people might want to study STEM if they were not that good in English.
+
+### Major and Science GPA
+```{r}
+# STEM and Science GPA
+ggplot(hsls_eda, aes(stem, gpa_sci)) +
+  geom_boxplot() +
+  scale_x_discrete(name = "Intended College Major",
+                   labels = c("Undecided", 
+                              "Non-STEM",
+                              "STEM"))
+```
+
+This plot shows the relationship between intended college major and science GPA. It seems like on average students who intended to study STEM have a higher science GPA, and students who were undecided have a relatively lower science GPA on average.
+
+### Major and Social Science GPA
+```{r}
+# STEM and Social Science GPA
+ggplot(hsls_eda, aes(stem, gpa_sosci)) +
+  geom_boxplot() +
+  scale_x_discrete(name = "Intended College Major",
+                   labels = c("Undecided", 
+                              "Non-STEM",
+                              "STEM"))
+```
+
+This plot shows the relationship between intended college major and social science GPA. The trend is the same as the science GPA plot: on average students who intended to study STEM have a higher social science GPA, and students who were undecided have a relatively lower science GPA on average. Again this is a little surprising for the same reason as English GPA.
+
+### Major and STEM GPA
+```{r}
+ggplot(hsls_eda, aes(stem, gpa_stem)) +
+  geom_boxplot() +
+  scale_x_discrete(name = "Intended College Major",
+                   labels = c("Undecided", 
+                              "Non-STEM",
+                              "STEM"))
+```
+
+This plot shows the relationship between intended college major and STEM GPA. It seems like on average students who intended to study STEM have a higher STEM GPA, but on average there is no difference in terms of STEM GPA for students who intended to study non-STEM or undecided.
+
+### Major and Total GPA
+```{r}
+# STEM and total GPA
+ggplot(hsls_eda, aes(stem, gpa_total)) +
+  geom_boxplot() +
+  scale_x_discrete(name = "Intended College Major",
+                   labels = c("Undecided", 
+                              "Non-STEM",
+                              "STEM"))
+```
+
+This plot shows the relationship between intended college major and total GPA. It seems like on average students who intended to study STEM have a higher total GPA, but on average there is no difference in terms of STEM GPA for students who intended to study non-STEM or undecided. 
+
+### Major and STEM Course Credits
+```{r}
+# STEM and STEM Course Credits
+ggplot(hsls_eda, aes(stem, cred_stem)) +
+  geom_boxplot() +
+  scale_x_discrete(name = "Intended College Major",
+                   labels = c("Undecided", 
+                              "Non-STEM",
+                              "STEM"))
+```
+
+This plot shows the relationship between intended college major and total STEM course credits earned. It seems like on average students who intended to study STEM have earned more STEM course credits than students who intended to study non-STEM or undecided.
+
+### Major and Engineering Course
+```{r}
+ggplot(hsls_eda, aes(stem, fill = gpa_engin)) +
+  geom_bar(position = "fill") +
+  scale_x_discrete(name = "Intended College Major",
+                   labels = c("Undecided", 
+                              "Non-STEM",
+                              "STEM")) +
+  ylab("Percentage") 
+```
+
+This plot shows the relationship between intended college major and whether they have taken engineering course (as indicated by whether or not they have engineering GPA). It seems like the proportion of engineering course taking is larger among students who intended to study STEM, compared to students who intended to study non-STEM or undecided, but the difference is larger for the non-STEM group.
+
+```{r}
+ggplot(hsls_eda, aes(gpa_engin, fill = stem)) +
+  geom_bar(position = "fill") +
+  ylab("Percentage") +
+  scale_fill_discrete(name = "Intended College Major",
+                      labels = c("Undecided", 
+                                 "Non-STEM",
+                                 "STEM"))
+```
+
+Again this plot also shows the relationship between intended college major and whether they have taken engineering course. Among students who have an engineering GPA, a larger proportion of them intended to study STEM.
+
+### Major and AP Math
+```{r}
+ggplot(hsls_eda, aes(stem, fill = gpa_mat_ap)) +
+  geom_bar(position = "fill") +
+  scale_x_discrete(name = "Intended College Major",
+                   labels = c("Undecided", 
+                              "Non-STEM",
+                              "STEM")) +
+  ylab("Percentage") 
+```
+
+This plot shows the relationship between intended college major and whether they have taken AP math course (as indicated by whether or not they have AP math GPA). It seems like the proportion of AP math course taking is about twice of that among students who intended to study STEM, compared to students who intended to study non-STEM or undecided.
+
+```{r}
+ggplot(hsls_eda, aes(gpa_mat_ap, fill = stem)) +
+  geom_bar(position = "fill") +
+  ylab("Percentage") +
+  scale_fill_discrete(name = "Intended College Major",
+                      labels = c("Undecided", 
+                                 "Non-STEM",
+                                 "STEM")) 
+```
+
+Again this plot also shows the relationship between intended college major and whether they have taken AP math course. Among students who have an AP math GPA (suggesting they have taken AP math courses), a larger proportion of them intended to study STEM, and that proportion is about twice of that for intended non-STEM majors or undecided.
+
+### Major and AP Science
+```{r}
+ggplot(hsls_eda, aes(stem, fill = gpa_sci_ap)) +
+  geom_bar(position = "fill") +
+  scale_x_discrete(name = "Intended College Major",
+                   labels = c("Undecided", 
+                              "Non-STEM",
+                              "STEM")) +
+  ylab("Percentage") 
+```
+
+This plot shows the relationship between intended college major and whether they have taken AP science course (as indicated by whether or not they have AP science GPA). It seems like the proportion of AP science course taking is about twice of that among students who intended to study STEM, compared to students who intended to study non-STEM or undecided.
+
+```{r}
+ggplot(hsls_eda, aes(gpa_sci_ap, fill = stem)) +
+  geom_bar(position = "fill") +
+  ylab("Percentage") +
+  scale_fill_discrete(name = "Intended College Major",
+                      labels = c("Undecided", 
+                                 "Non-STEM",
+                                 "STEM")) 
+```
+
+Again this plot also shows the relationship between intended college major and whether they have taken AP science course. Among students who have an AP science GPA (suggesting they have taken AP science courses), a larger proportion of them intended to study STEM, and that proportion is about twice of that for intended non-STEM majors or undecided.
+
+### Major and School Information on STEM
+```{r}
+ggplot(hsls_eda, aes(stem, fill = info_stem)) +
+  geom_bar(position = "fill") +
+  scale_x_discrete(name = "Intended College Major",
+                   labels = c("Undecided", 
+                              "Non-STEM",
+                              "STEM")) +
+  ylab("Percentage") 
+```
+
+This plot shows the relationship between intended college major and whether their school provides information on STEM majors to their parents. It looks like there is no clear relationship between intended college major and the STEM information provided by school.
+
+```{r}
+ggplot(hsls_eda, aes(info_stem, fill = stem)) +
+  geom_bar(position = "fill") +
+  ylab("Percentage") +
+  scale_fill_discrete(name = "Intended College Major",
+                      labels = c("Undecided", 
+                                 "Non-STEM",
+                                 "STEM")) 
+```
+
+Again this plot also shows the relationship between intended college major and whether their school provides information on STEM majors to their parents. It does not like there is a clear relationship either.
+
+### Major and Parent 1 Major
+```{r}
+ggplot(hsls_eda, aes(stem, fill = p1stem)) +
+  geom_bar(position = "fill") +
+  scale_x_discrete(name = "Intended College Major",
+                   labels = c("Undecided", 
+                              "Non-STEM",
+                              "STEM")) +
+  ylab("Percentage") +
+  scale_fill_discrete(name = "Parent 1 Major",
+                      labels = c("NA",
+                                 "Non-STEM",
+                                 "STEM"))
+```
+
+This plot shows the relationship between intended college major and their parent1's major. It looks like there is for students who intended to study STEM, their parents seem to have a higher probability of holding STEM degree.
+
+```{r}
+ggplot(hsls_eda, aes(p1stem, fill = stem)) +
+  geom_bar(position = "fill") +
+  ylab("Percentage") +
+  scale_fill_discrete(name = "Intended College Major",
+                      labels = c("Undecided", 
+                                 "Non-STEM",
+                                 "STEM")) 
+```
+
+Again this plot also shows the relationship between intended college major and their parent1's major. For parents with STEM degree, there seems to be a higher change that their kids would intend to study STEM as well.
+
+### Major and Parent 2 Major
+```{r}
+ggplot(hsls_eda, aes(stem, fill = p2stem)) +
+  geom_bar(position = "fill") +
+  scale_x_discrete(name = "Intended College Major",
+                   labels = c("Undecided", 
+                              "Non-STEM",
+                              "STEM")) +
+  ylab("Percentage") +
+  scale_fill_discrete(name = "Parent 2 Major",
+                      labels = c("NA",
+                                 "Non-STEM",
+                                 "STEM"))
+```
+
+This plot shows the relationship between intended college major and their parent2's major. Similar to the plots for parent1, it looks like there is for students who intended to study STEM, their parents seem to have a higher probability of holding STEM degree.
+
+```{r}
+ggplot(hsls_eda, aes(p2stem, fill = stem)) +
+  geom_bar(position = "fill") +
+  ylab("Percentage") +
+  scale_fill_discrete(name = "Intended College Major",
+                      labels = c("Undecided", 
+                                 "Non-STEM",
+                                 "STEM")) 
+```
+
+Again this plot also shows the relationship between intended college major and their parent2's major. We also see a similar trend as with parent1, that is: for parents with STEM degree, there seems to be a higher change that their kids would intend to study STEM as well.
+
+### Major and Race/Ethnicity
+```{r}
+# STEM and Race/Ethnicity
+ggplot(hsls_eda, aes(race, fill = stem)) +
+  geom_bar(position = "fill") +
+  scale_x_discrete(labels = c("NA",
+                              "Native",
+                              "Asian",
+                              "Black/African",
+                              "Hispanic, no race specified",
+                              "Hispanic, race specified",
+                              "More than one race",
+                              "Pacific Islander",
+                              "White")) +
+  ylab("Percentage") +
+  coord_flip() +
+  scale_fill_discrete(name = "Intended College Major",
+                      labels = c("Undecided", 
+                                 "Non-STEM",
+                                 "STEM"))
+
+```
+
+This plot shows the relationship between intended college major and their race/ethnicity. It seems like Asian and Hispanic are more likely to intend majoring in STEM, which is a little bit surprising because Hispanic are often considered underrepresented in STEM in STEM education literature. It is also interesting that from this plot, Native Americans and African Americans are not underrepresented; they actually have about the same percentage with White. Does this mean that education researchers are all wrong and that Hispanic, Native, and African Americans are not underrepresented in STEM? Maybe not. One thing to note here is that it is the intended college major; people might actually change mind after entering college, or they did start a STEM major but did not finish. We also need to note that the impact of missing values.
+
+### Major and Parent Education
+```{r}
+# STEM and Parent Education
+ggplot(hsls_eda, aes(paredu, fill = stem)) +
+  geom_bar(position = "fill") +
+  scale_x_discrete(name = "Parents' Highest Level of Education",
+                   labels = c("NA",
+                              "Less than high school",
+                              "High School",
+                              "Occupational school",
+                              "Associate",
+                              "Bachelor",
+                              "Master",
+                              "Doctoral")) +
+  ylab("Percentage") +
+  coord_flip() +
+  scale_fill_discrete(name = "Intended College Major",
+                      labels = c("Undecided", 
+                                 "Non-STEM",
+                                 "STEM"))
+
+```
+
+This plot shows the relationship between intended college major and their parents' education level. It seems like there is a trend that students are more likely to intend majoring in STEM if their parents have a higher level of education. We also need to note that the impact of missing values.

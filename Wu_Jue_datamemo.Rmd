@@ -1,0 +1,24 @@
+---
+title: "Wu_Jue_datamemo"
+author: "Jue Wu"
+date: "4/22/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Overview
+This is my data memo for the STAT 301-3 final project.
+
+# Data Source
+The data set I will be using is from the High School Longitudinal Study of 2009 (HSLS:09). HSLS:09 surveyed 23000+ 9th graders (and their parents, math and science teachers, school administrators, school counselors) in 2009 and followed them throughout secondary and postsecondary years with a first follow-up in 2012 and a second follow-up in 2016. Public-use data for this project is available for download at https://nces.ed.gov/onlinecodebook.
+
+Citation: National Center for Education Statistics, U.S. Department of Education (2016): High School Longitudinal Study of 2009 (HSLS:09). https://nces.ed.gov/surveys/hsls09/.
+
+# Why This Dataset
+I am interested in predicting high school students' intended college major, specifically whether it is a STEM major or not. This is a classification problem. My response variable is `X4ENTMJST`: X4 Major considering upon postsecondary entry is in a science, technology, engineering, or math (STEM) field. My predictors can include for example students' gender, race/ethnicity, parents' education level, SAT math score, high school math GPA, high school science GPA, total high school credits earned in STEM, etc. All these variables are available in the HSLS:09 dataset, and it also includes many other variables that I may further explore.
+
+# Potential Data Issues
+One potential issue with using this huge data set is that I need to go through the codebook carefully and identify variables that are relevent and interesting to my research question. Moreover, I don't anticipate merging any data, but may need to do some cleaning. For example, when I looked at my response variable `X4ENTMJST` (X4 Major considering upon postsecondary entry is in a science, technology, engineering, or math (STEM) field), it has been coded in six categories: 0: No; 1: Yes; -9: Missing; -8: Unit non-response; -7: Item legitimate skip/NA; -1: Undeclared/undecided. Only about 51% of all the 23503 responses are either 0 or 1, and I will probably remove the rest because that is not what I want to predict and classify in this project. 

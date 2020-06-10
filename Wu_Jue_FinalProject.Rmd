@@ -1,0 +1,879 @@
+---
+title: "Wu_Jue_FinalProject"
+author: "Jue Wu"
+date: "6/8/2020"
+output: 
+  html_document:
+    highlight: tango
+    toc: yes
+    toc_float: yes
+    code_folding: hide
+---
+
+```{r global_options, include = FALSE}
+library(knitr)
+opts_chunk$set(warning = FALSE, message = FALSE, comment = FALSE, dpi = 300)
+```
+
+## Overview
+This is my final report on STAT 301-3: Data Science III. This project focuses on students' intended college major. The goal of this project is to explore how to predict whether a student's intended college major is a STEM major or not. This is a classification problem.
+
+## Executive Summary
+One important issue in U.S. workforce is not having enough qualified STEM workers, which in fact is a problem of not having enough STEM graduates in U.S. higher education. Therefore, in this project, I would like to explore whether we can predict students' intended college major with some information about their high school performance, family, and school. 
+
+In this project, I created various models (multinomial logistic regression, ridge and lasso regressions, support vector machines, tree-based models) to predict whether a student's intended college major is a STEM major or non-STEM major or undecided. The goal is to investigate how accurately can a student's intended college major be predicted and what are some important predictors. 
+
+All of my models resulted in test misclassification rates around 30%, which is an accuracy of about 70%. Among all the models, a lasso regression with labmda_min = 0.01 performs best with a 28.6% misclassfication rate. Significant predictors from this lasso regression include students' high school GPAs, race, and parent's college major. Parents' education level and whether school has information on STEM do not seem to be significant in predicting students' intended college major. 
+
+## Data 
+The data set I used is from the High School Longitudinal Study of 2009 (HSLS:09). HSLS:09 surveyed 23000+ 9th graders (and their parents, math and science teachers, school administrators, school counselors) in 2009 and followed them throughout secondary and postsecondary years with a first follow-up in 2012 and a second follow-up in 2016. Public-use data for this project is available for download at https://nces.ed.gov/onlinecodebook.
+
+**Citation: National Center for Education Statistics, U.S. Department of Education (2016): High School Longitudinal Study of 2009 (HSLS:09). https://nces.ed.gov/surveys/hsls09/.**
+
+Because the original dataset is very large, I first selected variables I'm interested in, which includes students' race, parents' education level, parents' college major, GPAs (including engineering GPA, math GPA, science GPA, social sicnece GPA, total GPA, AP math GPA, AP science GPA) STEM credits earned, high school information on STEM, and my target variable: students' intended college major.
+
+Due to large missingness, I did some data cleaning and pre-processing. Things I did to clean and process include: cleaning up variables’ names, removing observations with missing values for my response variable, removing observations with missing values for GPAs with an exception of keeping missing values for Engineering and AP Math and AP Science GPA because that can be an indicator for STEM preparation, recoding some variables as factors, and collapsing categories.
+
+The processed dataset includes 12131 rows, which means 12131 students’ responses. It also includes 16 columns, which means 16 variables, and one of them is my response variable. Among the 16 variables, 9 of them are categorical and 7 of them are numerical. Specifically, my response variable `stem` is a categorical variable with three levels coded as -1, 0, 1, meaning "undecided", "Non-STEM", "STEM".
+
+Then split the cleaned data into three subsets: 15% for model testing, 85% for modeling. Among the 85% for modeling, 80% is going to be used for model training, and 20% is going to be used for exploratory data analysis.
+
+```{r}
+# Load packages
+library(tidyverse)
+library(janitor)
+library(modelr)
+library(rsample)
+library(ranger)
+library(vip)
+library(pdp)
+library(xgboost)
+library(glmnet)
+library(glmnetUtils) 
+library(e1071)
+library(nnet)
+library(keras)
+library(data.table)
+library(mltools)
+library(skimr)
+library(corrplot)
+
+# Set seed
+set.seed(3)
+
+# Read in cleaned data
+hsls <- read_rds("data/processed/hsls.rds")
+
+# Split: 15% testing, 85% modeling (80% training, 20% EDA)
+hsls_split_info <- hsls %>% 
+  initial_split(prop = 0.85) 
+
+hsls_split <- tibble(
+  eda = hsls_split_info %>% training() %>% sample_frac(0.2) %>% list(),
+  train = hsls_split_info %>% training() %>% setdiff(eda) %>% list(),
+  test = hsls_split_info %>% testing() %>% list()
+)
+
+# Select train and test data
+train <- hsls_split %>% 
+  pluck("train", 1) 
+
+test <- hsls_split %>% 
+  pluck("test", 1) 
+```
+
+## Model Building
+In the model building process, I fit the following models: multinomial logistic regression, ridge and lasso regressions, decision trees (including random forests, bagging, and boosted tree), support vector machines, and neural network.
+
+### Multinomial Logistic Regression
+Because my response variable is a categorical variable with 3 levels, the ordinary logistic regression with binomial target is not feasible. So I fit a multinomial logistic regression model. The test misclassification rate is shown below.
+```{r}
+# fit multinomial 
+mlr <- multinom(stem ~ ., data = train, trace = FALSE)
+
+# get prediction
+pred_stem <- predict(mlr, test)
+
+# misclass rate
+mlr_misclass <- test %>% 
+  mutate(
+    error = pred_stem != test$stem
+  ) %>% 
+  pull(error) %>% 
+  mean()
+
+mlr_misclass <- tibble(
+  "method" = "mlr",
+  "test_misclass" = mlr_misclass
+) 
+
+mlr_misclass %>% 
+  arrange(test_misclass) %>% 
+  knitr::kable(digits = 3)
+```
+
+### Ridge and Lasso
+Ridge and lasso regressions are shrinkage techniques to reduce the number of predictors used. I used 10-fold cross validation to determine my best lambdas. The lambdas chosen are the minimum value and the one standard error value for both methods, and they are shown in the plots. `ridge_lambda_min` is 0.015, `ridge)lambda_1se` is 0.244; `lasso_lambda_min` is 0.01, `lasso_lambda_1se` is 0.0348. Then the candidate models were created using these lambdas, and the test misclassification rate for these 4 models are shown below. 
+```{r}
+## Ridge
+# lambda grid to search -- use for ridge regression (200 values)
+lambda_grid <- 10^seq(-2, 10, length = 200)
+
+# ridge regression: 10-fold cv
+ridge_cv <- train %>% 
+  cv.glmnet(
+    formula = stem ~ ., 
+    family = "multinomial",
+    type.multinomial = "grouped",
+    data = ., 
+    alpha = 0, 
+    nfolds = 10,
+    lambda = lambda_grid
+  )
+
+# Check plot of cv error
+plot(ridge_cv)
+
+# ridge's best lambdas: 0.015, 0.244
+ridge_lambda_min <- ridge_cv$lambda.min
+ridge_lambda_1se <- ridge_cv$lambda.1se
+
+# Candidate model
+ridge_class <- tibble(
+  train = train %>% list(),
+  test  = test %>% list()
+) %>%
+  mutate(
+    ridge_min = map(train, ~ glmnet(stem ~ ., family = "multinomial", type.multinomial = "grouped",
+                                    data = .x,
+                                    alpha = 0, lambda = ridge_lambda_min)),
+    ridge_1se = map(train, ~ glmnet(stem ~ ., family = "multinomial", type.multinomial = "grouped",
+                                    data = .x,
+                                    alpha = 0, lambda = ridge_lambda_1se)) 
+  ) %>% 
+  pivot_longer(cols = c(-test, -train), names_to = "method", values_to = "fit")
+
+# Test Error
+ridge_min_pred <- predict(ridge_class$fit[[1]], test, type = "class")
+
+ridge_min_misclass <- test %>% 
+  mutate(
+    error = ridge_min_pred != test$stem
+  ) %>% 
+  pull(error) %>% 
+  mean()
+
+ridge_1se_pred <- predict(ridge_class$fit[[2]], test, type = "class")
+
+ridge_1se_misclass <- test %>% 
+  mutate(
+    error = ridge_1se_pred != test$stem
+  ) %>% 
+  pull(error) %>% 
+  mean()
+
+# Lasso
+# Lasso regression: 10-fold cv
+lasso_cv <- train %>% 
+  cv.glmnet(
+    formula = stem ~ ., 
+    family = "multinomial",
+    type.multinomial = "grouped",
+    data = ., 
+    alpha = 1, 
+    nfolds = 10,
+    lambda = lambda_grid
+  )
+
+# Check plot of cv error
+plot(lasso_cv)
+
+# lasso's best lambdas: 0.01, 0.0348
+lasso_lambda_min <- lasso_cv$lambda.min
+lasso_lambda_1se <- lasso_cv$lambda.1se
+
+# Candidate model
+lasso_class <- tibble(
+  train = train %>% list(),
+  test  = test %>% list()
+) %>%
+  mutate(
+    ridge_min = map(train, ~ glmnet(stem ~ ., family = "multinomial", type.multinomial = "grouped",
+                                    data = .x,
+                                    alpha = 1, lambda = ridge_lambda_min)),
+    ridge_1se = map(train, ~ glmnet(stem ~ ., family = "multinomial", type.multinomial = "grouped",
+                                    data = .x,
+                                    alpha = 1, lambda = ridge_lambda_1se)) 
+  ) %>% 
+  pivot_longer(cols = c(-test, -train), names_to = "method", values_to = "fit")
+
+# Test Error
+lasso_min_pred <- predict(lasso_class$fit[[1]], test, type = "class")
+
+lasso_min_misclass <- test %>% 
+  mutate(
+    error = lasso_min_pred != test$stem
+  ) %>% 
+  pull(error) %>% 
+  mean()
+
+lasso_1se_pred <- predict(lasso_class$fit[[2]], test, type = "class")
+
+lasso_1se_misclass <- test %>% 
+  mutate(
+    error = lasso_1se_pred != test$stem
+  ) %>% 
+  pull(error) %>% 
+  mean()
+
+
+rl_misclass <- tibble(
+  "method" = c("ridge_min", "ridge_1se", "lasso_min", "lasso_1se"),
+  "test_misclass" = c(ridge_min_misclass, ridge_1se_misclass, lasso_min_misclass, lasso_1se_misclass)
+) 
+
+rl_misclass %>% 
+  arrange(test_misclass) %>% 
+  knitr::kable(digits = 3)
+```
+
+
+### Support Vector Machines
+Because my response variable is a categorical variable, I then created linear, radial, and polynomial SVMs. I used 10-fold cross validation to find the best `cost` for my SVMs. My tuning led to a cost = 1 for the linear SVM, a cost = 5 for the radial SVM, and a cost of 10 for the polinomial SVM. The test misclassification rates for all 3 SVMs are shown in the table. 
+```{r}
+# Create svm_dat
+svm_dat <- tibble(
+  train = train %>% list(),
+  test  = test %>% list()
+)
+
+# fit the model with best cost: linear_params cost = 1
+svm_linear_model <- svm_dat %>%
+  mutate(model_fit = map(.x = train, # fit the model
+                         .f = function(x) svm(stem ~ ., data = x, cost = 1, kernel = "linear")), 
+         test_pred = map2(model_fit, test, predict), # get predictions on test set
+         confusion_matrix = map2(.x = test, .y = test_pred,  # get confusion matrix
+                                 .f = function(x, y) caret::confusionMatrix(x$stem, y))
+  )
+
+# get confusion matrix for test set
+conf_mat_linear <- svm_linear_model %>% 
+  pluck("confusion_matrix", 1)
+
+# get accuracy and test error
+accu_linear <- conf_mat_linear$overall[["Accuracy"]]
+error_linear <- 1 - accu_linear
+
+# fit the model with best cost: radial_params cost = 5
+svm_radial_model <- svm_dat %>%
+  mutate(model_fit = map(.x = train, # fit the model
+                         .f = function(x) svm(stem ~ ., data = x, cost = 5, kernel = "radial")), 
+         test_pred = map2(model_fit, test, predict), # get predictions on test set
+         confusion_matrix = map2(.x = test, .y = test_pred,  # get confusion matrix
+                                 .f = function(x, y) caret::confusionMatrix(x$stem, y))
+  )
+
+# get confusion matrix for test set
+conf_mat_radial <- svm_radial_model %>% 
+  pluck("confusion_matrix", 1)
+
+# get accuracy and test error
+accu_radial <- conf_mat_radial$overall[["Accuracy"]]
+error_radial <- 1 - accu_radial
+
+# fit the model with best cost: poly_params cost = 10
+svm_poly_model <- svm_dat %>%
+  mutate(model_fit = map(.x = train, # fit the model
+                         .f = function(x) svm(stem ~ ., data = x, cost = 10, kernel = "polynomial")), 
+         test_pred = map2(model_fit, test, predict), # get predictions on test set
+         confusion_matrix = map2(.x = test, .y = test_pred,  # get confusion matrix
+                                 .f = function(x, y) caret::confusionMatrix(x$stem, y))
+  )
+
+# get confusion matrix for test set
+conf_mat_poly <- svm_poly_model %>% 
+  pluck("confusion_matrix", 1)
+
+# get accuracy and test error
+accu_poly <- conf_mat_poly$overall[["Accuracy"]]
+error_poly <- 1 - accu_poly
+
+svm_misclass <- tibble(
+  "method" = c("svm_linear", "svm_radial", "svm_poly"),
+  "test_misclass" = c(error_linear, error_radial, error_poly)
+) 
+
+svm_misclass %>% 
+  arrange(test_misclass) %>% 
+  knitr::kable(digits = 3)
+```
+
+### Decision Trees
+For tree-based models, I fitted a boosted model, random forests, and a bagging model. 
+
+**Boosted Model**
+
+For my boosted model, I used 5-fold cross validation to find the best combination of learning rate and number of trees. I created my candidate model using this combination of learning rate and number of trees, and the test misclassification rate is shown below.
+```{r}
+# Helper function to convert tibble to DMatrix
+xgb_matrix <- function(dat, outcome, exclude_vars){
+  # Sanitize input: check that data has factors, not characters
+  dat_types <- dat %>% map_chr(class)
+  outcome_type <- class(dat[[outcome]])
+  if("chr" %in% dat_types){
+    # If we need to re-code, leave that outside of the function
+    print("You must encode characters as factors.")
+    return(NULL)
+  } else {
+    lab <- as.integer(dat[[outcome]]) - 1
+    # Make our DMatrix
+    mat <- dat %>% dplyr::select(-outcome, -all_of(exclude_vars)) %>% # encode on full boston df
+      onehot::onehot() %>% # use onehot to encode variables
+      predict(dat) # get OHE matrix
+    return(xgb.DMatrix(data = mat, 
+                       label = lab))
+  }
+}
+
+# Helper function to get error (either mse or misclass)
+xg_error <- function(model, test_mat, metric = "mse"){
+  # Get predictions and actual values
+  preds = predict(model, test_mat)
+  vals = getinfo(test_mat, "label")
+  if(metric == "mse"){
+    # Compute MSE if that's what we need
+    err <- mean((preds - vals)^2)
+  } else if(metric == "misclass") {
+    # Otherwise, get the misclass rate
+    err <- mean(preds != vals)
+  }
+  return(err)
+}
+
+# Load model
+xg_mod <- xgb.load("xg_mod")
+
+# Candidate model
+xg_class <- tibble(
+  train = train %>% list(),
+  test  = test %>% list()
+) %>%
+  mutate(# Build xgb Dmatrices for training and test set
+    train_mat = map(train, xgb_matrix, outcome = "stem", exclude_vars = NULL), 
+    test_mat = map(test, xgb_matrix, outcome = "stem", exclude_vars = NULL)
+  ) %>% 
+  mutate(
+    xg_model = list(xg_mod)
+  ) %>% 
+  pivot_longer(cols = c(-test, -train, -test_mat, -train_mat), names_to = "method", values_to = "fit") 
+
+# Test error
+xg_misclass <- xg_class %>% 
+  mutate(
+    test_misclass = map2_dbl(fit, test_mat, xg_error, metric = "misclass")
+  ) %>% 
+  select(method, test_misclass) 
+
+xg_misclass %>% 
+  knitr::kable(digits = 3)
+```
+
+**Bagging and Random Forests**
+
+For my random forests, I used 5-fold cross validation to find the best `mtry`. I found mtry = 2 and mtry = 3 gave me the lowest misclassification rate from the cross validation, so those became my candidate models. I also used mtry = 15 which is my bagging model. The test misclassification rates for these 3 models are shown in the table below. 
+```{r}
+# Helper function to get misclass rate for bagging and random forests
+misclass_ranger <- function(model, test, outcome){
+  # check if test is a tibble
+  if(!is_tibble(test)){
+    test <- test %>% as_tibble()
+  }
+  # create predicted values
+  preds <- predict(model, test)$predictions
+  # misclassification rate
+  misclass <- mean(test[[outcome]] != preds)
+  return(misclass)
+}
+
+# Candidate model
+rf_class <- tibble(
+  train = train %>% list(),
+  test  = test %>% list()
+) %>%
+  mutate(
+    rf_mtry2 = map(train, ~ ranger(stem ~ . , 
+                                   data = .x, 
+                                   mtry = 2,
+                                   importance = "impurity", 
+                                   splitrule = "gini")),
+    rf_mtry3 = map(train, ~ ranger(stem ~ . , 
+                                   data = .x, 
+                                   mtry = 3,
+                                   importance = "impurity", 
+                                   splitrule = "gini")),
+    bagging_mtry15 = map(train, ~ ranger(stem ~ . , 
+                                         data = .x, 
+                                         mtry = 15,
+                                         importance = "impurity", 
+                                         splitrule = "gini"))
+  ) %>% 
+  pivot_longer(cols = c(-test, -train), names_to = "method", values_to = "fit")
+
+# Test error
+rf_misclass <- rf_class %>% 
+  mutate(
+    test_misclass = map2_dbl(fit, test, misclass_ranger, outcome = "stem")
+  ) %>% 
+  select(method, test_misclass)
+
+## Test errors combined and organized
+rf_misclass %>% 
+  arrange(test_misclass) %>% 
+  knitr::kable(digits = 3)
+```
+
+### Neural Network
+I created a small neural network with 3 layers (2 hidden). I used 4-fold cross validation to determine the best epoch, and I got epoch = 90. I then trained the model on the entire training set and used that model to get predictions on the test set. The test misclassification rate is shown below.
+```{r}
+# load data
+train_data <- train %>% 
+  select(-stem) %>% 
+  as.data.table() %>% 
+  one_hot() %>% # one hot encoding categorical variables
+  data.matrix()
+
+train_targets <- train %>% 
+  pull(stem) %>% 
+  as.numeric() - 1 # label value should be 0, 1, 2
+
+test_data <- test %>% 
+  select(-stem) %>% 
+  as.data.table() %>% 
+  one_hot() %>% 
+  data.matrix()
+
+test_targets <- test %>% 
+  pull(stem) %>% 
+  as.numeric() - 1
+
+# normalize data
+mean <- apply(train_data, 2, mean)
+std <- apply(train_data, 2, sd)
+train_data <- scale(train_data)
+test_data <- scale(test_data, center = mean, scale = std)
+
+# function to build network
+build_model <- function() {
+  model <- keras_model_sequential() %>% 
+    layer_dense(units = 64, activation = "relu", 
+                input_shape = dim(train_data)[[2]]) %>% 
+    layer_dense(units = 64, activation = "relu") %>% 
+    layer_dense(units = 3, activation = "softmax") 
+  
+  model %>% compile(
+    optimizer = "rmsprop", 
+    loss = "sparse_categorical_crossentropy", # integer labels
+    metrics = c("accuracy")
+  )
+}
+
+# load model
+neural_net <- load_model_tf("neural_net")
+
+# evaluate on test set
+result <- neural_net %>% 
+  evaluate(test_data, test_targets)
+
+# test misclass
+neural_net_misclass <- 1 - result$accuracy
+neural_net_misclass <- tibble(
+  "method" = "neural_net",
+  "test_misclass" = neural_net_misclass
+)
+
+neural_net_misclass %>% 
+  knitr::kable(digits = 3)
+```
+
+## Model Comparison
+I now organized all the test misclassification rates from all my candidate models. All these models perform about 30% error, which means around 70% accuracy. Among all these models, a lasso regression with `lasso_min` perform best, with a 28.6% misclassification rate. Additionally, a random forest with mtry = 2 also performs well a 28.9% misclassification rate. Now we can inspect these 2 models further.
+```{r}
+## Test errors combined and organized
+rf_misclass %>% 
+  bind_rows(xg_misclass) %>% 
+  bind_rows(svm_misclass) %>% 
+  bind_rows(mlr_misclass) %>% 
+  bind_rows(rl_misclass) %>% 
+  bind_rows(neural_net_misclass) %>% 
+  arrange(test_misclass) %>% 
+  knitr::kable(digits = 3)
+```
+
+### Lasso 
+The table below shows the coefficients from the lasso_min model. We can see that it did reduce the number of predictors. The predictors that are selected by lasso regression include: student's race, engineering GPA, science GPA, STEM credits earned, STEM GPA, AP math GPA, AP science GPA, parents' college major.
+```{r}
+# Inspect lasso min
+cf_lasso_min <- coef(lasso_class$fit[[1]]) %>% 
+  lapply(as.matrix) %>% 
+  Reduce(cbind, x = .) 
+
+colnames(cf_lasso_min) <- c("Undecided", "Non-STEM", "STEM")
+
+cf_lasso_min[apply(cf_lasso_min[,-1], 1, function(x) !all(x==0)),] %>% 
+  knitr::kable(digits = 3)
+```
+
+### Random Forests 
+The variable importance plot below shows the most significant predictors from my random forest model with mtry = 2. We can see that STEM credits earned is the most significant predictor to predict whether a student's intended college major is a STEM major or not, or undecided. This is of much more importance than other predictors as the plot shows. Other important predictors include: parents' education level, student's race, math GPA, science GPA, STEM GPA, engineering GPA, social science GPA, AP science GPA, and AP math GPA.
+```{r}
+# Examine variable importance for mtry2
+rf_mtry2 = ranger(stem ~ . , 
+                  data = train, 
+                  mtry = 2,
+                  importance = "impurity", 
+                  splitrule = "gini",
+                  probability = TRUE)
+
+vip(rf_mtry2)
+```
+
+## Conclusion and Future Direction
+My results suggest some useful ways to predict students' intended college major using STEM credits earned, GPAs, and parents' education level. The significant predictors from my best models in fact echo a lot with what I found through EDA. 
+
+If given more time, I would like to better tune parameters for my models. For example, I only tuned cost for my SVMs, but I can further tune gamma for my radial SVM and degree for my polynomial SVM. I can also further tune my neural network. 
+
+## Appendix: Exploratory Data Analysis
+```{r}
+# Select EDA data
+hsls_eda <- hsls_split %>% 
+  pluck("eda", 1) 
+
+# Overview of EDA data
+skim_without_charts(hsls_eda)
+```
+
+2062 observations are included in the EDA dataset, with means and SDs close to the whole sample.
+
+### Correlation Plot
+We can begin our exploration by plotting pairwise correlations between numerical variables.
+```{r}
+# Corrplot
+hsls_eda %>% 
+  select(gpa_eng, gpa_mat, gpa_sci, gpa_sosci, gpa_stem, gpa_total) %>% 
+  cor() %>% 
+  corrplot()
+```
+
+It seems like students' GPAs for different subjects are highly correlated. 
+
+Now let's zoom in and look at some specific variables.
+
+### Univariate: Intended College Major
+```{r}
+ggplot(hsls_eda, aes(stem)) +
+  geom_bar() +
+  scale_x_discrete(name = "Intended College Major",
+                   labels = c("Undecided", 
+                              "Non-STEM",
+                              "STEM"))
+```
+
+This is a bar chart of my response variable `stem`, which is a categorical variable on whether students' intended college major was a STEM major when they were surveyed during the senior year of high school. We can see that the number of students intending to major in non-STEM is about third times of the number of students intending to major in STEM, which makes sense as we know that the U.S. definitely needs more STEM workers. Also a small portion of students were undecided when they were surveyed during their senior year of high school.
+
+### Major and Math GPA
+```{r}
+# STEM and Math GPA
+ggplot(hsls_eda, aes(stem, gpa_mat)) +
+  geom_boxplot() +
+  scale_x_discrete(name = "Intended College Major",
+                   labels = c("Undecided", 
+                              "Non-STEM",
+                              "STEM"))
+```
+
+This plot shows the relationship between intended college major and math GPA. It seems like on average students who intended to study STEM have a higher math GPA.
+
+### Major and English GPA
+```{r}
+# STEM and English GPA
+ggplot(hsls_eda, aes(stem, gpa_eng)) +
+  geom_boxplot() +
+  scale_x_discrete(name = "Intended College Major",
+                   labels = c("Undecided", 
+                              "Non-STEM",
+                              "STEM"))
+```
+
+This plot shows the relationship between intended college major and English GPA. It seems like on average students who intended to study STEM have a higher English GPA, which is a little surprising to me because I thought people might want to study STEM if they were not that good in English.
+
+### Major and Science GPA
+```{r}
+# STEM and Science GPA
+ggplot(hsls_eda, aes(stem, gpa_sci)) +
+  geom_boxplot() +
+  scale_x_discrete(name = "Intended College Major",
+                   labels = c("Undecided", 
+                              "Non-STEM",
+                              "STEM"))
+```
+
+This plot shows the relationship between intended college major and science GPA. It seems like on average students who intended to study STEM have a higher science GPA, and students who were undecided have a relatively lower science GPA on average.
+
+### Major and Social Science GPA
+```{r}
+# STEM and Social Science GPA
+ggplot(hsls_eda, aes(stem, gpa_sosci)) +
+  geom_boxplot() +
+  scale_x_discrete(name = "Intended College Major",
+                   labels = c("Undecided", 
+                              "Non-STEM",
+                              "STEM"))
+```
+
+This plot shows the relationship between intended college major and social science GPA. The trend is the same as the science GPA plot: on average students who intended to study STEM have a higher social science GPA, and students who were undecided have a relatively lower science GPA on average. Again this is a little surprising for the same reason as English GPA.
+
+### Major and STEM GPA
+```{r}
+ggplot(hsls_eda, aes(stem, gpa_stem)) +
+  geom_boxplot() +
+  scale_x_discrete(name = "Intended College Major",
+                   labels = c("Undecided", 
+                              "Non-STEM",
+                              "STEM"))
+```
+
+This plot shows the relationship between intended college major and STEM GPA. It seems like on average students who intended to study STEM have a higher STEM GPA, but on average there is no difference in terms of STEM GPA for students who intended to study non-STEM or undecided.
+
+### Major and Total GPA
+```{r}
+# STEM and total GPA
+ggplot(hsls_eda, aes(stem, gpa_total)) +
+  geom_boxplot() +
+  scale_x_discrete(name = "Intended College Major",
+                   labels = c("Undecided", 
+                              "Non-STEM",
+                              "STEM"))
+```
+
+This plot shows the relationship between intended college major and total GPA. It seems like on average students who intended to study STEM have a higher total GPA, but on average there is no difference in terms of STEM GPA for students who intended to study non-STEM or undecided. 
+
+### Major and STEM Course Credits
+```{r}
+# STEM and STEM Course Credits
+ggplot(hsls_eda, aes(stem, cred_stem)) +
+  geom_boxplot() +
+  scale_x_discrete(name = "Intended College Major",
+                   labels = c("Undecided", 
+                              "Non-STEM",
+                              "STEM"))
+```
+
+This plot shows the relationship between intended college major and total STEM course credits earned. It seems like on average students who intended to study STEM have earned more STEM course credits than students who intended to study non-STEM or undecided.
+
+### Major and Engineering Course
+```{r}
+ggplot(hsls_eda, aes(stem, fill = gpa_engin)) +
+  geom_bar(position = "fill") +
+  scale_x_discrete(name = "Intended College Major",
+                   labels = c("Undecided", 
+                              "Non-STEM",
+                              "STEM")) +
+  ylab("Percentage") 
+```
+
+This plot shows the relationship between intended college major and whether they have taken engineering course (as indicated by whether or not they have engineering GPA). It seems like the proportion of engineering course taking is larger among students who intended to study STEM, compared to students who intended to study non-STEM or undecided, but the difference is larger for the non-STEM group.
+
+```{r}
+ggplot(hsls_eda, aes(gpa_engin, fill = stem)) +
+  geom_bar(position = "fill") +
+  ylab("Percentage") +
+  scale_fill_discrete(name = "Intended College Major",
+                      labels = c("Undecided", 
+                                 "Non-STEM",
+                                 "STEM"))
+```
+
+Again this plot also shows the relationship between intended college major and whether they have taken engineering course. Among students who have an engineering GPA, a larger proportion of them intended to study STEM.
+
+### Major and AP Math
+```{r}
+ggplot(hsls_eda, aes(stem, fill = gpa_mat_ap)) +
+  geom_bar(position = "fill") +
+  scale_x_discrete(name = "Intended College Major",
+                   labels = c("Undecided", 
+                              "Non-STEM",
+                              "STEM")) +
+  ylab("Percentage") 
+```
+
+This plot shows the relationship between intended college major and whether they have taken AP math course (as indicated by whether or not they have AP math GPA). It seems like the proportion of AP math course taking is about twice of that among students who intended to study STEM, compared to students who intended to study non-STEM or undecided.
+
+```{r}
+ggplot(hsls_eda, aes(gpa_mat_ap, fill = stem)) +
+  geom_bar(position = "fill") +
+  ylab("Percentage") +
+  scale_fill_discrete(name = "Intended College Major",
+                      labels = c("Undecided", 
+                                 "Non-STEM",
+                                 "STEM")) 
+```
+
+Again this plot also shows the relationship between intended college major and whether they have taken AP math course. Among students who have an AP math GPA (suggesting they have taken AP math courses), a larger proportion of them intended to study STEM, and that proportion is about twice of that for intended non-STEM majors or undecided.
+
+### Major and AP Science
+```{r}
+ggplot(hsls_eda, aes(stem, fill = gpa_sci_ap)) +
+  geom_bar(position = "fill") +
+  scale_x_discrete(name = "Intended College Major",
+                   labels = c("Undecided", 
+                              "Non-STEM",
+                              "STEM")) +
+  ylab("Percentage") 
+```
+
+This plot shows the relationship between intended college major and whether they have taken AP science course (as indicated by whether or not they have AP science GPA). It seems like the proportion of AP science course taking is about twice of that among students who intended to study STEM, compared to students who intended to study non-STEM or undecided.
+
+```{r}
+ggplot(hsls_eda, aes(gpa_sci_ap, fill = stem)) +
+  geom_bar(position = "fill") +
+  ylab("Percentage") +
+  scale_fill_discrete(name = "Intended College Major",
+                      labels = c("Undecided", 
+                                 "Non-STEM",
+                                 "STEM")) 
+```
+
+Again this plot also shows the relationship between intended college major and whether they have taken AP science course. Among students who have an AP science GPA (suggesting they have taken AP science courses), a larger proportion of them intended to study STEM, and that proportion is about twice of that for intended non-STEM majors or undecided.
+
+### Major and School Information on STEM
+```{r}
+ggplot(hsls_eda, aes(stem, fill = info_stem)) +
+  geom_bar(position = "fill") +
+  scale_x_discrete(name = "Intended College Major",
+                   labels = c("Undecided", 
+                              "Non-STEM",
+                              "STEM")) +
+  ylab("Percentage") 
+```
+
+This plot shows the relationship between intended college major and whether their school provides information on STEM majors to their parents. It looks like there is no clear relationship between intended college major and the STEM information provided by school.
+
+```{r}
+ggplot(hsls_eda, aes(info_stem, fill = stem)) +
+  geom_bar(position = "fill") +
+  ylab("Percentage") +
+  scale_fill_discrete(name = "Intended College Major",
+                      labels = c("Undecided", 
+                                 "Non-STEM",
+                                 "STEM")) 
+```
+
+Again this plot also shows the relationship between intended college major and whether their school provides information on STEM majors to their parents. It does not like there is a clear relationship either.
+
+### Major and Parent 1 Major
+```{r}
+ggplot(hsls_eda, aes(stem, fill = p1stem)) +
+  geom_bar(position = "fill") +
+  scale_x_discrete(name = "Intended College Major",
+                   labels = c("Undecided", 
+                              "Non-STEM",
+                              "STEM")) +
+  ylab("Percentage") +
+  scale_fill_discrete(name = "Parent 1 Major",
+                      labels = c("NA",
+                                 "Non-STEM",
+                                 "STEM"))
+```
+
+This plot shows the relationship between intended college major and their parent1's major. It looks like there is for students who intended to study STEM, their parents seem to have a higher probability of holding STEM degree.
+
+```{r}
+ggplot(hsls_eda, aes(p1stem, fill = stem)) +
+  geom_bar(position = "fill") +
+  ylab("Percentage") +
+  scale_fill_discrete(name = "Intended College Major",
+                      labels = c("Undecided", 
+                                 "Non-STEM",
+                                 "STEM")) 
+```
+
+Again this plot also shows the relationship between intended college major and their parent1's major. For parents with STEM degree, there seems to be a higher change that their kids would intend to study STEM as well.
+
+### Major and Parent 2 Major
+```{r}
+ggplot(hsls_eda, aes(stem, fill = p2stem)) +
+  geom_bar(position = "fill") +
+  scale_x_discrete(name = "Intended College Major",
+                   labels = c("Undecided", 
+                              "Non-STEM",
+                              "STEM")) +
+  ylab("Percentage") +
+  scale_fill_discrete(name = "Parent 2 Major",
+                      labels = c("NA",
+                                 "Non-STEM",
+                                 "STEM"))
+```
+
+This plot shows the relationship between intended college major and their parent2's major. Similar to the plots for parent1, it looks like there is for students who intended to study STEM, their parents seem to have a higher probability of holding STEM degree.
+
+```{r}
+ggplot(hsls_eda, aes(p2stem, fill = stem)) +
+  geom_bar(position = "fill") +
+  ylab("Percentage") +
+  scale_fill_discrete(name = "Intended College Major",
+                      labels = c("Undecided", 
+                                 "Non-STEM",
+                                 "STEM")) 
+```
+
+Again this plot also shows the relationship between intended college major and their parent2's major. We also see a similar trend as with parent1, that is: for parents with STEM degree, there seems to be a higher change that their kids would intend to study STEM as well.
+
+### Major and Race/Ethnicity
+```{r}
+# STEM and Race/Ethnicity
+ggplot(hsls_eda, aes(race, fill = stem)) +
+  geom_bar(position = "fill") +
+  scale_x_discrete(labels = c("NA",
+                              "Native",
+                              "Asian",
+                              "Black/African",
+                              "Hispanic, no race specified",
+                              "Hispanic, race specified",
+                              "More than one race",
+                              "Pacific Islander",
+                              "White")) +
+  ylab("Percentage") +
+  coord_flip() +
+  scale_fill_discrete(name = "Intended College Major",
+                      labels = c("Undecided", 
+                                 "Non-STEM",
+                                 "STEM"))
+
+```
+
+This plot shows the relationship between intended college major and their race/ethnicity. It seems like Asian and Hispanic are more likely to intend majoring in STEM, which is a little bit surprising because Hispanic are often considered underrepresented in STEM in STEM education literature. It is also interesting that from this plot, Native Americans and African Americans are not underrepresented; they actually have about the same percentage with White. Does this mean that education researchers are all wrong and that Hispanic, Native, and African Americans are not underrepresented in STEM? Maybe not. One thing to note here is that it is the intended college major; people might actually change mind after entering college, or they did start a STEM major but did not finish. We also need to note that the impact of missing values.
+
+### Major and Parent Education
+```{r}
+# STEM and Parent Education
+ggplot(hsls_eda, aes(paredu, fill = stem)) +
+  geom_bar(position = "fill") +
+  scale_x_discrete(name = "Parents' Highest Level of Education",
+                   labels = c("NA",
+                              "Less than high school",
+                              "High School",
+                              "Occupational school",
+                              "Associate",
+                              "Bachelor",
+                              "Master",
+                              "Doctoral")) +
+  ylab("Percentage") +
+  coord_flip() +
+  scale_fill_discrete(name = "Intended College Major",
+                      labels = c("Undecided", 
+                                 "Non-STEM",
+                                 "STEM"))
+
+```
+
+This plot shows the relationship between intended college major and their parents' education level. It seems like there is a trend that students are more likely to intend majoring in STEM if their parents have a higher level of education. We also need to note that the impact of missing values.
