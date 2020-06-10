@@ -1,0 +1,734 @@
+2016 High School Longitudinal Study of 2009 EDAT Extract Codebook
+
+C:\EDAT\HSLS\Codebook_200505233538.txt
+
+/*****************************************************************************************
+NOTES:                                                                                  
+   (1) Full sample weights and/or replicate weights are added automatically.
+   (2) Identification numbers are added automatically.
+*****************************************************************************************/
+
+
+
+File:       STUDENT
+Name:       X1RACE
+Position:   301
+Length:     2
+Label:      X1 Student's race/ethnicity-composite
+
+Description:
+X1RACE characterizes the sample member's race/ethnicity by summarizing the following six dichotomous race/ethnicity composites: X1HISPANIC, X1WHITE, X1BLACK, X1ASIAN, X1PACISLE, and X1AMINDIAN. The dichotomous race/ethnicity composites are based on data from the student questionnaire, if available; if not available from the student questionnaire, they are based on, in order of preference, data from the school-provided sampling roster or data from the parent questionnaire. X1RACE is derived from the six dichotomous race/ethnicity variables listed above (though the imputed values of X1WHITE, X1BLACK, X1ASIAN, X1PACISLE, and X1AMINDIAN are not stored on the data file). If  any of these input variables are imputed, then the imputation flag for X1RACE (X1RACE _IM) is set to 1.
+
+
+                                                                        Frequency             Percent 
+Category            Label                                              Unweighted          Unweighted 
+------------------- ----------------------------------------- ------------------- ------------------- 
+1                   Amer. Indian/Alaska Native, non-Hispanic                  165                0.70 
+2                   Asian, non-Hispanic                                     1,952                8.31 
+3                   Black/African-American, non-Hispanic                    2,450               10.42 
+4                   Hispanic, no race specified                               422                1.80 
+5                   Hispanic, race specified                                3,375               14.36 
+6                   More than one race, non-Hispanic                        1,941                8.26 
+7                   Native Hawaiian/Pacific Islander, non-Hi                  110                0.47 
+                    spanic
+8                   White, non-Hispanic                                    12,082               51.41 
+-9                  Missing                                                 1,006                4.28 
+TOTAL                                                                      23,503              100.00 
+
+
+----------------------------------------------------------------------------------------------------------
+----------------------------------------------------------------------------------------------------------
+
+
+File:       STUDENT
+Name:       X2PAREDU
+Position:   869
+Length:     2
+Label:      X2 Parents'/guardians' highest level of education
+
+Description:
+Indicates the highest level of education achieved by either parent 1 or parent 2. X2PAREDU is constructed from two composite variables (X2PAR1EDU and X2PAR2EDU) which can contain imputed values; if either of these two input variables are imputed and the highest level of education could not be inferred from non-imputed data, then the imputation flag for X2PAREDU (X2PAREDU_IM) is set to 2. Unit nonresponse for this composite is less than the set of F1 student nonrespondents (X2SQSTAT>7) due to inclusion of parent  data for student nonrespondents and questionnaire incapables.  The additional parent data are available for use with the W2PARENT weight.
+
+
+SAS Logic:
+if X2PQSTAT in (8,9) then X2PAREDU = -8 ;
+else if X2PAR1EDU=7 or X2PAR2EDU=7 then X2PAREDU=7;
+else if X2PAR1EDU=-9 or X2PAR2EDU=-9 then X2PAREDU=-9;
+else if X2PAR1EDU >= X2PAR2EDU then X2PAREDU = X2PAR1EDU ;
+else if X2PAR2EDU >  0 then X2PAREDU = X2PAR2EDU ;
+
+                                                                        Frequency             Percent 
+Category            Label                                              Unweighted          Unweighted 
+------------------- ----------------------------------------- ------------------- ------------------- 
+1                   Less than high school                                   1,094                4.65 
+2                   High school diploma or GED or alterntive                6,400               27.23 
+                     HS credential
+3                   Certificate/diploma from school providin                1,011                4.30 
+                    g occupational training
+4                   Associate's degree                                      3,342               14.22 
+5                   Bachelor's degree                                       5,154               21.93 
+6                   Master's degree                                         2,615               11.13 
+7                   Ph.D/M.D/Law/other high lvl prof degree                 1,303                5.54 
+-8                  Unit non-response                                       2,584               10.99 
+TOTAL                                                                      23,503              100.00 
+
+
+----------------------------------------------------------------------------------------------------------
+----------------------------------------------------------------------------------------------------------
+
+
+File:       STUDENT
+Name:       X3TGPAENG
+Position:   1251
+Length:     4
+Label:      X3 GPA: English
+
+Description:
+GPA in English Language and Literature, which is the first two digits of the course SCED code: 01.
+
+
+SAS Logic:
+if substr(T3SSCED,1,2) = '01' and T3SGRD in (1:13) and T3SGRLEV >= 4 then do;
+EngFlag = 0;
+if T3SGRD in (1,2) then gpaGrade = 4.0;
+else if T3SGRD = 3 then gpaGrade = 3.7;
+else if T3SGRD = 4 then gpaGrade = 3.3;
+else if T3SGRD = 5 then gpaGrade = 3.0;
+else if T3SGRD = 6 then gpaGrade = 2.7;
+else if T3SGRD = 7 then gpaGrade = 2.3;
+else if T3SGRD = 8 then gpaGrade = 2.0;
+else if T3SGRD = 9 then gpaGrade = 1.7;
+else if T3SGRD = 10 then gpaGrade = 1.3;
+else if T3SGRD = 11 then gpaGrade = 1.0;
+else if T3SGRD = 12 then gpaGrade = 1.0;
+else if T3SGRD = 13 then gpaGrade = 0.0;
+X3TGPAENGsum = X3TGPAENGsum + (gpaGrade * T3SCRED);
+potEngCred = potEngCred + T3SCREDPOT;
+if X3TGPAENGsum ^= 0 then do;
+X3TGPAENG = X3TGPAENGsum / potEngCred;
+end;
+else if substr(T3SSCED,1,2) = '01' and T3SCRED > 0 and T3SGRLEV >= 4 and EngFlag ^= 0 then EngFlag = 1;
+if potEngCred = 0.0 then X3TGPAENG = -1;
+if EngFlag = 1 then X3TGPAENG = -9;
+X3TGPAENG = round(X3TGPAENG,.001);
+
+Sparse values recoded to similar values on the public use file.
+
+                                                                           Mean       Std Deviation 
+Category                            Min                 Max          Unweighted          Unweighted 
+------------------- ------------------- ------------------- ------------------- ------------------- 
+Continuous                        -9.00                4.00                2.60                0.95 
+
+
+----------------------------------------------------------------------------------------------------------
+----------------------------------------------------------------------------------------------------------
+
+
+File:       STUDENT
+Name:       X3TGPAMAT
+Position:   1281
+Length:     4
+Label:      X3 GPA: mathematics
+
+Description:
+GPA in Mathematics, which is the first two digits of the course SCED code: 02.
+
+
+SAS Logic:
+if substr(T3SSCED,1,2) = '02' and T3SGRD in (1:13) and T3SGRLEV >= 4 then do;
+MatFlag = 0;
+if T3SGRD in (1,2) then gpaGrade = 4.0;
+else if T3SGRD = 3 then gpaGrade = 3.7;
+else if T3SGRD = 4 then gpaGrade = 3.3;
+else if T3SGRD = 5 then gpaGrade = 3.0;
+else if T3SGRD = 6 then gpaGrade = 2.7;
+else if T3SGRD = 7 then gpaGrade = 2.3;
+else if T3SGRD = 8 then gpaGrade = 2.0;
+else if T3SGRD = 9 then gpaGrade = 1.7;
+else if T3SGRD = 10 then gpaGrade = 1.3;
+else if T3SGRD = 11 then gpaGrade = 1.0;
+else if T3SGRD = 12 then gpaGrade = 1.0;
+else if T3SGRD = 13 then gpaGrade = 0.0;
+X3TGPAMATsum = X3TGPAMATsum + (gpaGrade * T3SCRED);
+potMatCred = potMatCred + T3SCREDPOT;
+if X3TGPAMATsum ^= 0 then do;
+X3TGPAMAT = X3TGPAMATsum / potMatCred;
+end;
+else if substr(T3SSCED,1,2) = '02' and T3SCRED > 0 and T3SGRLEV >= 4 and MatFlag ^= 0 then MatFlag = 1;
+if potMatCred = 0.0 then X3TGPAMAT = -1;
+if MatFlag = 1 then X3TGPAMAT = -9;
+X3TGPAMAT = round(X3TGPAMAT,.001);
+
+Sparse values recoded to similar values on the public use file.
+
+                                                                           Mean       Std Deviation 
+Category                            Min                 Max          Unweighted          Unweighted 
+------------------- ------------------- ------------------- ------------------- ------------------- 
+Continuous                        -9.00                4.00                2.37                0.98 
+
+
+----------------------------------------------------------------------------------------------------------
+----------------------------------------------------------------------------------------------------------
+
+
+File:       STUDENT
+Name:       X3TGPASCI
+Position:   1309
+Length:     4
+Label:      X3 GPA: science
+
+Description:
+GPA in Life and Physical Sciences, which is the first two digits of the course SCED code: 03.
+
+
+SAS Logic:
+if substr(T3SSCED,1,2) = '03' and T3SGRD in (1:13) and T3SGRLEV >= 4 then do;
+SciFlag = 0;
+if T3SGRD in (1,2) then gpaGrade = 4.0;
+else if T3SGRD = 3 then gpaGrade = 3.7;
+else if T3SGRD = 4 then gpaGrade = 3.3;
+else if T3SGRD = 5 then gpaGrade = 3.0;
+else if T3SGRD = 6 then gpaGrade = 2.7;
+else if T3SGRD = 7 then gpaGrade = 2.3;
+else if T3SGRD = 8 then gpaGrade = 2.0;
+else if T3SGRD = 9 then gpaGrade = 1.7;
+else if T3SGRD = 10 then gpaGrade = 1.3;
+else if T3SGRD = 11 then gpaGrade = 1.0;
+else if T3SGRD = 12 then gpaGrade = 1.0;
+else if T3SGRD = 13 then gpaGrade = 0.0;
+X3TGPASCIsum = X3TGPASCIsum + (gpaGrade * T3SCRED);
+potSciCred = potSciCred + T3SCREDPOT;
+if X3TGPASCIsum ^= 0 then do;
+X3TGPASCI = X3TGPASCIsum / potSciCred;
+end;
+else if substr(T3SSCED,1,2) = '03' and T3SCRED > 0 and T3SGRLEV >= 4 and SciFlag ^= 0 then SciFlag = 1;
+if potSciCred = 0.0 then X3TGPASCI = -1;
+if SciFlag = 1 then X3TGPASCI = -9;
+X3TGPASCI = round(X3TGPASCI,.001);
+
+Sparse values recoded to similar values on the public use file.
+
+                                                                           Mean       Std Deviation 
+Category                            Min                 Max          Unweighted          Unweighted 
+------------------- ------------------- ------------------- ------------------- ------------------- 
+Continuous                        -9.00                4.00                2.44                0.98 
+
+
+----------------------------------------------------------------------------------------------------------
+----------------------------------------------------------------------------------------------------------
+
+
+File:       STUDENT
+Name:       X3TGPASOCST
+Position:   1331
+Length:     4
+Label:      X3 GPA: social studies
+
+Description:
+GPA in Social Sciences and History, which is the first two digits of the course SCED code: 04.
+
+
+SAS Logic:
+if substr(T3SSCED,1,2) = '04' and T3SGRD in (1:13) and T3SGRLEV >= 4 then do;
+SocStFlag = 0;
+if T3SGRD in (1,2) then gpaGrade = 4.0;
+else if T3SGRD = 3 then gpaGrade = 3.7;
+else if T3SGRD = 4 then gpaGrade = 3.3;
+else if T3SGRD = 5 then gpaGrade = 3.0;
+else if T3SGRD = 6 then gpaGrade = 2.7;
+else if T3SGRD = 7 then gpaGrade = 2.3;
+else if T3SGRD = 8 then gpaGrade = 2.0;
+else if T3SGRD = 9 then gpaGrade = 1.7;
+else if T3SGRD = 10 then gpaGrade = 1.3;
+else if T3SGRD = 11 then gpaGrade = 1.0;
+else if T3SGRD = 12 then gpaGrade = 1.0;
+else if T3SGRD = 13 then gpaGrade = 0.0;
+X3TGPASOCSTsum = X3TGPASOCSTsum + (gpaGrade * T3SCRED);
+potSocStCred = potSocStCred + T3SCREDPOT;
+if X3TGPASOCSTsum ^= 0 then do;
+X3TGPASOCST = X3TGPASOCSTsum / potSocStCred;
+end;
+else if substr(T3SSCED,1,2) = '04' and T3SCRED > 0 and T3SGRLEV >= 4 and SocStFlag ^= 0 then SocStFlag = 1;
+if potSocStCred = 0.0 then X3TGPASOCST = -1;
+if SocStFlag = 1 then X3TGPASOCST = -9;
+X3TGPASOCST = round(X3TGPASOCST,.01);
+
+Sparse values recoded to similar values on the public use file.
+
+                                                                           Mean       Std Deviation 
+Category                            Min                 Max          Unweighted          Unweighted 
+------------------- ------------------- ------------------- ------------------- ------------------- 
+Continuous                        -9.00                4.00                2.64                0.96 
+
+
+----------------------------------------------------------------------------------------------------------
+----------------------------------------------------------------------------------------------------------
+
+
+File:       STUDENT
+Name:       X3TGPAENGIN
+Position:   1457
+Length:     4
+Label:      X3 GPA: engineering/engineering tech
+
+Description:
+GPA in Engineering and Technology, which is the first two digits of the course SCED code: 21.
+
+
+SAS Logic:
+if substr(T3SSCED,1,2) = '21' and T3SGRD in (1:13) and T3SGRLEV >= 4 then do;
+EnginFlag = 0;
+if T3SGRD in (1,2) then gpaGrade = 4.0;
+else if T3SGRD = 3 then gpaGrade = 3.7;
+else if T3SGRD = 4 then gpaGrade = 3.3;
+else if T3SGRD = 5 then gpaGrade = 3.0;
+else if T3SGRD = 6 then gpaGrade = 2.7;
+else if T3SGRD = 7 then gpaGrade = 2.3;
+else if T3SGRD = 8 then gpaGrade = 2.0;
+else if T3SGRD = 9 then gpaGrade = 1.7;
+else if T3SGRD = 10 then gpaGrade = 1.3;
+else if T3SGRD = 11 then gpaGrade = 1.0;
+else if T3SGRD = 12 then gpaGrade = 1.0;
+else if T3SGRD = 13 then gpaGrade = 0.0;
+X3TGPAENGINsum = X3TGPAENGINsum + (gpaGrade * T3SCRED);
+potEnginCred = potEnginCred + T3SCREDPOT;
+if X3TGPAENGINsum ^= 0 then do;
+X3TGPAENGIN = X3TGPAENGINsum / potEnginCred;
+end;
+else if substr(T3SSCED,1,2) = '21' and T3SCRED > 0 and T3SGRLEV >= 4 and EnginFlag ^= 0 then EnginFlag = 1;
+if potEnginCred = 0.0 then X3TGPAENGIN = -1;
+if EnginFlag = 1 then X3TGPAENGIN = -9;
+X3TGPAENGIN = round(X3TGPAENGIN,.01);
+
+Sparse values recoded to similar values on the public use file.
+
+                                                                           Mean       Std Deviation 
+Category                            Min                 Max          Unweighted          Unweighted 
+------------------- ------------------- ------------------- ------------------- ------------------- 
+Continuous                        -9.00                4.00                2.92                1.10 
+
+
+----------------------------------------------------------------------------------------------------------
+----------------------------------------------------------------------------------------------------------
+
+
+File:       STUDENT
+Name:       X3TCREDSTEM
+Position:   1483
+Length:     4
+Label:      X3 Credits earned in: STEM
+
+Description:
+Total Carnegie credits in STEM courses, which is the first two digits of the course SCED code: 02, 03, 10, 21. A Carnegie unit is equivalent to a one-year academic course taken one period a day, five days a week.
+
+
+SAS Logic:
+if substr(T3SSCED,1,2) in ('02, '03', ‘10', ‘21') and T3SGRLEV >= 4 and T3SCRED >= 0 then X3TCREDSTEM = X3TCREDSTEM + T3SCRED;
+if substr(T3SSCED,1,2) in ('02, '03', ‘10', ‘21') and T3SGRLEV >= 4 and T3SCREDPOT >= 0 then totPotSTEMCred = totPotSTEMCred + T3SCREDPOT; 
+X3TCREDSTEM = round(X3TCREDSTEM,.001);
+
+Sparse values recoded to similar values on the public use file.
+
+                                                                           Mean       Std Deviation 
+Category                            Min                 Max          Unweighted          Unweighted 
+------------------- ------------------- ------------------- ------------------- ------------------- 
+Continuous                       -8.000              16.000               7.473               2.686 
+
+
+----------------------------------------------------------------------------------------------------------
+----------------------------------------------------------------------------------------------------------
+
+
+File:       STUDENT
+Name:       X3TGPAACAD
+Position:   1534
+Length:     4
+Label:      X3 GPA for all academic courses
+
+Description:
+GPA in Academic courses, which is the first two digits of the course SCED code: 01, 02, 03, 04, 05, 06.
+
+
+SAS Logic:
+if substr(T3SSCED,1,2) in ('01','02','03','04','05','06') and T3SGRLEV >= 4 and T3SGRD in (1:13) then do;
+AcadFlag = 0;
+if T3SGRD in (1,2) then gpaGrade = 4.0;
+else if T3SGRD = 3 then gpaGrade = 3.7;
+else if T3SGRD = 4 then gpaGrade = 3.3;
+else if T3SGRD = 5 then gpaGrade = 3.0;
+else if T3SGRD = 6 then gpaGrade = 2.7;
+else if T3SGRD = 7 then gpaGrade = 2.3;
+else if T3SGRD = 8 then gpaGrade = 2.0;
+else if T3SGRD = 9 then gpaGrade = 1.7;
+else if T3SGRD = 10 then gpaGrade = 1.3;
+else if T3SGRD = 11 then gpaGrade = 1.0;
+else if T3SGRD = 12 then gpaGrade = 1.0;
+else if T3SGRD = 13 then gpaGrade = 0.0;
+X3TGPAACADsum = X3TGPAACADsum + (gpaGrade * T3SCRED);
+potAcadCred = potAcadCred + T3SCREDPOT;
+if X3TGPAACADsum ^= 0 then do;
+X3TGPAACAD = X3TGPAACADsum / potAcadCred;
+end;
+else if substr(T3SSCED,1,2) in ('01','02','03','04','05','06') and T3SCRED > 0 and T3SGRLEV >= 4 and AcadFlag ^= 0 then AcadFlag = 1;
+if potAcadCred = 0.0 then X3TGPAACAD = -1;
+if AcadFlag = 1 then X3TGPAACAD = -9;
+X3TGPAACAD = round(X3TGPAACAD,.01);
+
+Sparse values recoded to similar values on the public use file.
+
+                                                                           Mean       Std Deviation 
+Category                            Min                 Max          Unweighted          Unweighted 
+------------------- ------------------- ------------------- ------------------- ------------------- 
+Continuous                        -9.00                4.00                2.57                0.91 
+
+
+----------------------------------------------------------------------------------------------------------
+----------------------------------------------------------------------------------------------------------
+
+
+File:       STUDENT
+Name:       X3TGPASTEM
+Position:   1546
+Length:     4
+Label:      X3 GPA for STEM courses
+
+Description:
+GPA in STEM courses, which is the first two digits of the course SCED code: 02, 03, 10, 21.
+
+
+SAS Logic:
+if substr(T3SSCED,1,2) in ('02, '03', ‘10', ‘21') and T3SGRLEV >= 4 and T3SGRD in (1:13) then do; 
+STEMFlag = 0;
+if T3SGRD in (1,2) then gpaGrade = 4.0;
+else if T3SGRD = 3 then gpaGrade = 3.7;
+else if T3SGRD = 4 then gpaGrade = 3.3;
+else if T3SGRD = 5 then gpaGrade = 3.0;
+else if T3SGRD = 6 then gpaGrade = 2.7;
+else if T3SGRD = 7 then gpaGrade = 2.3;
+else if T3SGRD = 8 then gpaGrade = 2.0;
+else if T3SGRD = 9 then gpaGrade = 1.7;
+else if T3SGRD = 10 then gpaGrade = 1.3;
+else if T3SGRD = 11 then gpaGrade = 1.0;
+else if T3SGRD = 12 then gpaGrade = 1.0;
+else if T3SGRD = 13 then gpaGrade = 0.0;
+X3TGPASTEMsum = X3TGPASTEMsum + (gpaGrade * T3SCRED);
+potSTEMCred = potSTEMCred + T3SCREDPOT;
+if X3TGPASTEMsum ^= 0 then do;
+X3TGPASTEM = X3TGPASTEMsum / potSTEMCred;
+end;
+else if substr(T3SSCED,1,2) in ('02, '03', ‘10', ‘21') and T3SGRLEV >= 4 and STEMFlag ^= 0 then STEMFlag = 1;
+if potSTEMCred = 0.0 then X3TGPASTEM = -1;
+if STEMFlag = 1 then X3TGPASTEM = -9;
+X3TGPASTEM = round(X3TGPASTEM,.01);
+
+Sparse values recoded to similar values on the public use file.
+
+                                                                           Mean       Std Deviation 
+Category                            Min                 Max          Unweighted          Unweighted 
+------------------- ------------------- ------------------- ------------------- ------------------- 
+Continuous                        -9.00                4.00                2.43                0.94 
+
+
+----------------------------------------------------------------------------------------------------------
+----------------------------------------------------------------------------------------------------------
+
+
+File:       STUDENT
+Name:       X3TGPATOT
+Position:   1574
+Length:     4
+Label:      X3 Overall GPA computed
+
+Description:
+Overall GPA.
+
+
+SAS Logic:
+if T3SGRLEV >= 4 and T3SGRD in (1:13) then do; 
+TotFlag = 0;
+if T3SGRD in (1,2) then gpaGrade = 4.0;
+else if T3SGRD = 3 then gpaGrade = 3.7;
+else if T3SGRD = 4 then gpaGrade = 3.3;
+else if T3SGRD = 5 then gpaGrade = 3.0;
+else if T3SGRD = 6 then gpaGrade = 2.7;
+else if T3SGRD = 7 then gpaGrade = 2.3;
+else if T3SGRD = 8 then gpaGrade = 2.0;
+else if T3SGRD = 9 then gpaGrade = 1.7;
+else if T3SGRD = 10 then gpaGrade = 1.3;
+else if T3SGRD = 11 then gpaGrade = 1.0;
+else if T3SGRD = 12 then gpaGrade = 1.0;
+else if T3SGRD = 13 then gpaGrade = 0.0;
+X3TGPATOTsum = X3TGPATOTsum + (gpaGrade * T3SCRED);
+potTOTCred = potTOTCred + T3SCREDPOT;
+if X3TGPATOTsum ^= 0 then do;
+X3TGPATOT = X3TGPATOTsum / potTOTCred;
+end;
+else if T3SGRLEV >= 4 and TotFlag ^= 0 then TotFlag = 1;
+if potTotCred = 0.0 then X3TGPATOT = -1;
+if TotFlag = 1 then X3TGPATOT = -9;
+X3TGPATOT = round(X3TGPATOT,.01);
+
+
+Sparse values recoded to similar values on the public use file.
+
+                                                                           Mean       Std Deviation 
+Category                            Min                 Max          Unweighted          Unweighted 
+------------------- ------------------- ------------------- ------------------- ------------------- 
+Continuous                        -9.00                4.00                2.71                0.86 
+
+
+----------------------------------------------------------------------------------------------------------
+----------------------------------------------------------------------------------------------------------
+
+
+File:       STUDENT
+Name:       X3TGPAMTHAP
+Position:   1582
+Length:     4
+Label:      X3 GPA: AP/IB math courses
+
+Description:
+GPA in AP and IB Mathematics courses, which is the course SCED code(s): 02124, 02125, 02131, 02132, 02133, 02134, 02203.
+
+
+SAS Logic:
+if T3SSCED in (02124, 02125, 02131, 02132, 02133, 02134, 02203) and T3SGRLEV >= 4 and T3SGRD in (1:13) then do; 
+MthAPFlag = 0;
+if T3SGRD in (1,2) then gpaGrade = 4.0;
+else if T3SGRD = 3 then gpaGrade = 3.7;
+else if T3SGRD = 4 then gpaGrade = 3.3;
+else if T3SGRD = 5 then gpaGrade = 3.0;
+else if T3SGRD = 6 then gpaGrade = 2.7;
+else if T3SGRD = 7 then gpaGrade = 2.3;
+else if T3SGRD = 8 then gpaGrade = 2.0;
+else if T3SGRD = 9 then gpaGrade = 1.7;
+else if T3SGRD = 10 then gpaGrade = 1.3;
+else if T3SGRD = 11 then gpaGrade = 1.0;
+else if T3SGRD = 12 then gpaGrade = 1.0;
+else if T3SGRD = 13 then gpaGrade = 0.0;
+X3TGPAMTHAPsum = X3TGPAMTHAPsum + (gpaGrade * T3SCRED);
+potMTHAPCred = potMTHAPCred + T3SCREDPOT;
+if X3TGPAMTHAPsum ^= 0 then do;
+X3TGPAMTHAP = X3TGPAMTHAPsum / potMTHAPCred;
+end;
+else if T3SSCED in (02124, 02125, 02131, 02132, 02133, 02134, 02203) and T3SGRLEV >= 4 and MthAPFlag ^= 0 then MthAPFlag = 1;
+if potMthAPCred = 0.0 then X3TGPAMTHAP = -1;
+if MthAPFlag = 1 then X3TGPAMTHAP = -9;
+X3TGPAMTHAP = round(X3TGPAMTHAP,.01);
+
+Sparse values recoded to similar values on the public use file.
+
+                                                                           Mean       Std Deviation 
+Category                            Min                 Max          Unweighted          Unweighted 
+------------------- ------------------- ------------------- ------------------- ------------------- 
+Continuous                        -9.00                4.00                2.94                0.92 
+
+
+----------------------------------------------------------------------------------------------------------
+----------------------------------------------------------------------------------------------------------
+
+
+File:       STUDENT
+Name:       X3TGPASCIAP
+Position:   1586
+Length:     4
+Label:      X3 GPA: AP/IB science courses
+
+Description:
+GPA in AP and IB Science courses, which is the course SCED code(s): 03056, 03057, 03106, 03107, 03155, 03156, 03157, 03160, 03163, 03164, 03165, 03166, 03206, 03207, 03208.
+
+
+SAS Logic:
+if T3SSCED in (03056, 03057, 03106, 03107, 03155, 03156, 03157, 03160, 03163, 03164, 03165, 03166, 03206, 03207, 03208) and T3SGRLEV >= 4 and T3SGRD in (1:13) then do; 
+SciAPFlag = 0;
+if T3SGRD in (1,2) then gpaGrade = 4.0;
+else if T3SGRD = 3 then gpaGrade = 3.7;
+else if T3SGRD = 4 then gpaGrade = 3.3;
+else if T3SGRD = 5 then gpaGrade = 3.0;
+else if T3SGRD = 6 then gpaGrade = 2.7;
+else if T3SGRD = 7 then gpaGrade = 2.3;
+else if T3SGRD = 8 then gpaGrade = 2.0;
+else if T3SGRD = 9 then gpaGrade = 1.7;
+else if T3SGRD = 10 then gpaGrade = 1.3;
+else if T3SGRD = 11 then gpaGrade = 1.0;
+else if T3SGRD = 12 then gpaGrade = 1.0;
+else if T3SGRD = 13 then gpaGrade = 0.0;
+X3TGPASCIAPsum = X3TGPASCIAPsum + (gpaGrade * T3SCRED);
+potSCIAPCred = potSCIAPCred + T3SCREDPOT;
+if X3TGPASCIAPsum ^= 0 then do;
+X3TGPASCIAP = X3TGPASCIAPsum / potSCIAPCred;
+end;
+else if T3SSCED in (03056, 03057, 03106, 03107, 03155, 03156, 03157, 03160, 03163, 03164, 03165, 03166, 03206, 03207, 03208) and T3SGRLEV >= 4 and SciAPFlag ^= 0 then SciAPFlag = 1;
+if potSciAPCred = 0.0 then X3TGPASCIAP = -1;
+if SciAPFlag = 1 then X3TGPASCIAP = -9;
+X3TGPASCIAP = round(X3TGPASCIAP,.01);
+
+
+Sparse values recoded to similar values on the public use file.
+
+                                                                           Mean       Std Deviation 
+Category                            Min                 Max          Unweighted          Unweighted 
+------------------- ------------------- ------------------- ------------------- ------------------- 
+Continuous                        -9.00                4.00                2.99                0.90 
+
+
+----------------------------------------------------------------------------------------------------------
+----------------------------------------------------------------------------------------------------------
+
+
+File:       STUDENT
+Name:       X3TXSATMATH
+Position:   1629
+Length:     2
+Label:      X3 College entrance exam math score in terms of SAT
+
+Description:
+College entrance exam (i.e., SAT, ACT) math section score, standardized in terms of SAT. The score is filled from either the SAT math section score or the ACT math section score (using the ACT to SAT concordance scale).
+Sources: College Board and transcripts.
+
+
+Variable suppressed with -5 values on the public use file.
+
+                                                                                                                Frequency             Percent 
+Category            Label                                                     Min                 Max          Unweighted          Unweighted 
+------------------- ----------------------------------------- ------------------- ------------------- ------------------- ------------------- 
+Continuous                                                                  -5.00               -5.00                                         
+-5                  Data suppressed                                                                                23,503              100.00 
+TOTAL                                                                                                              23,503              100.00 
+
+
+----------------------------------------------------------------------------------------------------------
+----------------------------------------------------------------------------------------------------------
+
+
+File:       STUDENT
+Name:       X3TXSATREAD
+Position:   1631
+Length:     2
+Label:      X3 College entrance exam critical reading score in terms of SAT
+
+Description:
+College entrance exam (i.e., SAT, ACT) critical reading section score, standardized in terms of SAT. The score is filled from either the SAT critical reading section score or the ACT reading+English section score (using the ACT to SAT concordance scale).
+Sources: College Board and transcripts.
+
+
+Variable suppressed with -5 values on the public use file.
+
+                                                                                                                Frequency             Percent 
+Category            Label                                                     Min                 Max          Unweighted          Unweighted 
+------------------- ----------------------------------------- ------------------- ------------------- ------------------- ------------------- 
+Continuous                                                                  -5.00               -5.00                                         
+-5                  Data suppressed                                                                                23,503              100.00 
+TOTAL                                                                                                              23,503              100.00 
+
+
+----------------------------------------------------------------------------------------------------------
+----------------------------------------------------------------------------------------------------------
+
+
+File:       STUDENT
+Name:       X4ENTMJST
+Position:   1891
+Length:     2
+Label:      X4 Major considering upon postsecondary entry is in a science, technology, engineering, or math (STEM) field
+
+Description:
+Indicates whether the major the student was most seriously considering when first entering postsecondary education after high school was in a science, technology, engineering, or math (STEM) field.
+Based on the major the respondent was most seriously considering when first entering postsecondary education after high school as reported during the second follow up interview (S4FIELD). This may or may not be a declared major. Majors are classified using the U.S. Department of Education's Classification of Instructional Programs, 2010 edition (CIP 2010) and then classified as STEM using the definition used by the E.D. SMART grant. The variable S3FIELD_STEM contains similar data collected from either students or their parents in the 2013 Update. The 2013 Update collected intended field of study on the cusp of postsecondary entry or during the fall term of 2013 whereas this variable collects the intended major retrospectively. Question wording differs slightly due to temporal differences.  See also X4ENTMJSTNSF for NSF-supported STEM majors.
+
+Applies to: Second follow-up respondents who ever enrolled in a postsecondary institution after high school (i.e., X4EVRATNDCLG = 1)
+
+SAS Logic:
+if X4EVRATNDCLG = 0 then X4ENTMJST = -7;
+ else do;
+ if S4FIELD6 in (-9,-4,-3) then X4ENTMJST = -9;
+ else if S4FIELD6 = -7 then X4ENTMJST = -7;
+    else if S4FIELD6 = -1 then X4ENTMJST = -1;
+    else if (01.0901 <= S4FIELD6 <= 01.1299) or
+       (11.0101 <= S4FIELD6 <= 11.0501) or 
+       (11.0701 <= S4FIELD6 <= 11.9999) or
+       (14.0000 <= S4FIELD6 <= 15.0499) or
+       (15.0503 <= S4FIELD6 <= 15.9999) or
+       (26.0000 <= S4FIELD6 <= 27.9999) or
+       (29.0000 <= S4FIELD6 <= 29.9999) or
+       (40.0000 <= S4FIELD6 <= 41.9999) or
+       S4FIELD6 in (03.0104, 03.0301, 03.0502, 03.0509, 03.0601, 03.3201, 
+               30.0101, 30.0601, 30.0801, 30.1501, 30.1001, 30.1601, 30.1801, 
+               30.1901, 30.2401, 30.2501, 30.2701, 30.3001, 30.3101, 42.2706)
+        then X4ENTMJST = 1;
+    else X4ENTMJST = 0;
+end;
+
+                                                                        Frequency             Percent 
+Category            Label                                              Unweighted          Unweighted 
+------------------- ----------------------------------------- ------------------- ------------------- 
+0                   No                                                      8,941               38.04 
+1                   Yes                                                     3,193               13.59 
+-9                  Missing                                                   225                0.96 
+-8                  Unit non-response                                       6,168               26.24 
+-7                  Item legitimate skip/NA                                 4,281               18.21 
+-1                  Undeclared/undecided                                      695                2.96 
+TOTAL                                                                      23,503              100.00 
+
+
+----------------------------------------------------------------------------------------------------------
+----------------------------------------------------------------------------------------------------------
+
+
+File:       STUDENT
+Name:       X4GENDERID
+Position:   1979
+Length:     2
+Label:      X4 Gender identity
+
+Description:
+This variable indicates the respondent's gender Identity.
+For disclosure avoidance purposes, respondents' gender identity is categorized as "Transgender, genderqueer or nonconforming, and/or unsure" if (1) they indicated their gender identity was both male (S4MALE) and female (S4FEMALE), or (2) they indicated their gender identity was one or more of the following:  "Transgender, male-to-female" (S4TRANSMTF), "Transgender, female-to-male" (S4TRANSFTM), "Genderqueer or gender nonconforming, or some other gender" (S4OTHGENDER), or "You are not sure" (S4DKGENDER).
+Applies to: All second follow-up respondents.
+
+SAS Logic:
+if S4MALE = 1 and sum(S4FEMALE,S4TRANSMTF,S4TRANSFTM,S4OTHGENDER,S4DKGENDER) = 0 then X4GENDERID = 1;
+ else if S4FEMALE = 1 and sum(S4MALE,S4TRANSMTF,S4TRANSFTM,S4OTHGENDER,S4DKGENDER) = 0 then X4GENDERID = 2;
+ else if sum(S4MALE,S4FEMALE,S4TRANSMTF,S4TRANSFTM,S4OTHGENDER,S4DKGENDER) > 0 then X4GENDERID = 3;
+ else X4GENDERID = -9;
+
+Variable suppressed with -5 values on the public use file.
+
+                                                                        Frequency 
+Category            Label                                              Unweighted 
+------------------- ----------------------------------------- ------------------- 
+-5                  Data suppressed                                        23,503 
+
+
+----------------------------------------------------------------------------------------------------------
+----------------------------------------------------------------------------------------------------------
+
+
+File:       STUDENT
+Name:       C2INFSTEM
+Position:   7714
+Length:     2
+Label:      C2 B13B School has program to inform parent about STEM higher ed/careers
+
+Description:
+Does [school name] have any formal programs or systematic efforts to...
+inform parents or guardians about mathematics, science, engineering, or technology higher education or career opportunities?
+1=Yes
+0=No
+
+Note: Question wording was customized in the survey instrument such that the respondent's school name appeared in place of "school name".
+Administered To: All first follow-up respondents.
+
+                                                                        Frequency             Percent 
+Category            Label                                              Unweighted          Unweighted 
+------------------- ----------------------------------------- ------------------- ------------------- 
+0                   No                                                      7,461               31.74 
+1                   Yes                                                    11,747               49.98 
+-9                  Missing                                                    58                0.25 
+-8                  Unit non-response                                         310                1.32 
+-6                  Component not applicable                                3,927               16.71 
+TOTAL                                                                      23,503              100.00 
+
+
+----------------------------------------------------------------------------------------------------------
+----------------------------------------------------------------------------------------------------------
